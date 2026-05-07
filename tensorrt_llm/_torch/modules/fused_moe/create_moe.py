@@ -3,6 +3,7 @@ from typing import Dict, Optional, Type
 
 import torch
 
+from tensorrt_llm._utils import get_sm_version
 from tensorrt_llm.logger import logger
 from tensorrt_llm.models.modeling_utils import QuantConfig
 
@@ -70,6 +71,14 @@ def get_moe_cls(
                 or quant_config.quant_mode.has_w4a8_nvfp4_fp8()
                 or quant_config.quant_mode.has_w4a8_mxfp4_fp8()
                 or quant_config.quant_mode.has_w4a8_mxfp4_mxfp8()):
+            sm_version = get_sm_version()
+            if (sm_version not in {100, 103}
+                    and quant_config.quant_mode.has_fp8_block_scales()):
+                logger.warning(
+                    f"TRTLLMGenFusedMoE is only supported on SM100/SM103 for "
+                    f"FP8 block-scale MoE. Got SM{sm_version}; using "
+                    f"CutlassFusedMoE instead.")
+                return CutlassFusedMoE
             return TRTLLMGenFusedMoE
         else:
             logger.warning(

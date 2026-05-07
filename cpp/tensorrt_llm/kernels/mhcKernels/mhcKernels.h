@@ -40,7 +40,8 @@ void mhcHcHeadApplyLaunch(float const* mixes, float const* sqrsum, __nv_bfloat16
 void mhcPostMappingLaunch(__nv_bfloat16 const* residual, __nv_bfloat16 const* x, float const* post_mix,
     float const* comb_mix, __nv_bfloat16* out, int B, int hidden_size, cudaStream_t stream);
 
-// Single-launch fused hyper-connection boundary op (SM100 only).
+// Single-launch fused hyper-connection boundary op. The tcgen05 MMA path is
+// SM100-only; the FMA path supports pre-SM100 architectures.
 //
 // Produces (residual_cur, post_mix_cur, comb_mix_cur, layer_input_cur) in two
 // kernel launches: (1) tcgen05 TF32 GEMM fused with post-mapping and sqr-sum

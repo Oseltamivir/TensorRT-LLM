@@ -32,6 +32,9 @@ from tensorrt_llm._torch.models.modeling_deepseekv4 import (
     _remap_deepseek_v4_checkpoint_keys,
     _resolve_enable_fused_hc,
 )
+from tensorrt_llm._torch.modules.fused_moe.create_moe import get_moe_cls
+from tensorrt_llm._torch.modules.fused_moe.fused_moe_cutlass import CutlassFusedMoE
+from tensorrt_llm._torch.modules.fused_moe.fused_moe_trtllm_gen import TRTLLMGenFusedMoE
 from tensorrt_llm._torch.modules.linear import TensorParallelMode
 from tensorrt_llm._torch.pyexecutor.llm_request import LlmRequest, SamplingConfig
 from tensorrt_llm._torch.pyexecutor.scheduler import ScheduledRequests
@@ -355,6 +358,40 @@ def test_deepseek_v4_moe_auto_backend_on_blackwell(monkeypatch):
     monkeypatch.setattr("tensorrt_llm._torch.model_config.get_sm_version", lambda: 100)
 
     assert ModelConfig.resolve_moe_backend("AUTO", "DeepseekV4ForCausalLM") == "TRTLLM"
+
+
+def test_deepseek_v4_moe_auto_backend_on_hopper(monkeypatch):
+    monkeypatch.setattr("tensorrt_llm._torch.model_config.get_sm_version", lambda: 90)
+
+    assert ModelConfig.resolve_moe_backend("AUTO", "DeepseekV4ForCausalLM") == "CUTLASS"
+
+
+def test_deepseek_v4_explicit_trtllm_fp8_uses_cutlass_on_hopper(monkeypatch):
+    monkeypatch.setattr(
+        "tensorrt_llm._torch.modules.fused_moe.create_moe.get_sm_version",
+        lambda: 90,
+    )
+    model_config = ModelConfig(
+        pretrained_config=PretrainedConfig(),
+        moe_backend="TRTLLM",
+        quant_config=QuantConfig(quant_algo=QuantAlgo.FP8_BLOCK_SCALES),
+    )
+
+    assert get_moe_cls(model_config) is CutlassFusedMoE
+
+
+def test_deepseek_v4_explicit_trtllm_fp8_uses_trtllmgen_on_blackwell(monkeypatch):
+    monkeypatch.setattr(
+        "tensorrt_llm._torch.modules.fused_moe.create_moe.get_sm_version",
+        lambda: 100,
+    )
+    model_config = ModelConfig(
+        pretrained_config=PretrainedConfig(),
+        moe_backend="TRTLLM",
+        quant_config=QuantConfig(quant_algo=QuantAlgo.FP8_BLOCK_SCALES),
+    )
+
+    assert get_moe_cls(model_config) is TRTLLMGenFusedMoE
 
 
 def test_deepseek_v4_routed_moe_quant_config_from_mxfp4_header(tmp_path, monkeypatch):

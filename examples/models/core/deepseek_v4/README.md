@@ -41,8 +41,9 @@ for how to build TensorRT LLM from source and start a TRT-LLM Docker container.
 
 ## Hardware Requirements
 
-DeepSeek-V4 is only supported on Blackwell GPUs (`SM100+`) in the current PyTorch backend
-implementation. Pre-Blackwell GPUs are not supported for this model path.
+DeepSeek-V4 is supported on Blackwell GPUs (`SM100`/`SM103`) in the PyTorch backend. Hopper
+(`SM90`, for example H200) is supported for FP8 mixed checkpoints by using the Cutlass FP8 MoE
+backend and the FMA fused-HC path. FP4/MXFP4/NVFP4 routes remain Blackwell-only.
 
 DeepSeek-V4 has two model scales, and each scale provides Base and Instruct checkpoints. The table
 below follows the model list published on the
@@ -56,12 +57,14 @@ below follows the model list published on the
 | DeepSeek-V4-Pro | 1.6T | 49B | 1M | FP4 + FP8 Mixed |
 
 The minimum number of GPUs depends on the model scale, checkpoint precision, KV cache budget,
-maximum sequence length, and runtime batch size. For initial bring-up, an 8xB200 node is enough for
-Flash checkpoints and the FP4 + FP8 mixed DeepSeek-V4-Pro checkpoint. DeepSeek-V4-Pro-Base is larger
-because it uses FP8 mixed precision; if you want to keep the deployment on a single node, use an
-8xB300 node. Multi-node Blackwell deployments are still recommended for larger KV cache budgets,
-longer context windows, or higher throughput targets. Tune `--tp_size`, `--ep_size`,
-`--max_num_tokens`, and the KV cache memory fraction for your deployment target.
+maximum sequence length, and runtime batch size. For initial Blackwell bring-up, an 8xB200 node is
+enough for Flash checkpoints and the FP4 + FP8 mixed DeepSeek-V4-Pro checkpoint.
+DeepSeek-V4-Pro-Base is larger because it uses FP8 mixed precision; if you want to keep the
+deployment on a single node, use an 8xB300 node. For H200 bring-up, use FP8 mixed checkpoints only
+and build TensorRT LLM with `CUDA_ARCHS` including `90-real`. Multi-node Blackwell deployments are
+still recommended for larger KV cache budgets, longer context windows, or higher throughput targets.
+Tune `--tp_size`, `--ep_size`, `--max_num_tokens`, and the KV cache memory fraction for your
+deployment target.
 
 DeepSeek-V4 requires KV cache block sizes of 128 or 256 tokens. TensorRT LLM defaults DeepSeek-V4 to
 `tokens_per_block=128`, but scripts that set their own KV cache config should pass this explicitly.
@@ -461,7 +464,7 @@ DeepSeek-V4 KV cache requires:
 
 - `tokens_per_block` set to `128` or `256`.
 - `max_beam_width=1`.
-- Blackwell GPUs for the current implementation.
+- Blackwell GPUs for FP4/MXFP4/NVFP4 paths; Hopper/H200 is FP8-only.
 
 Use a lower `free_gpu_memory_fraction`, `max_batch_size`, or `max_num_tokens` if the workload runs
 out of memory during initialization or prefill.
@@ -479,7 +482,8 @@ configuration.
 - `DeepseekV4CacheManager requires tokens_per_block in [128, 256]`: pass
   `--tokens_per_block 128` in `quickstart_advanced.py` or set
   `kv_cache_config.tokens_per_block: 128` in YAML.
-- `DeepSeek-V4 is not supported on pre-blackwell GPUs`: run on Blackwell GPUs (`SM100+`).
+- `TRTLLMGenFusedMoE requires SM100 or SM103`: on H200, use an FP8 mixed checkpoint and a build that
+  includes `CUDA_ARCHS=90-real`; the FP8 MoE path will use CutlassFusedMoE.
 - Out-of-memory during initialization or prefill: reduce `max_batch_size`, `max_num_tokens`, or
   `kv_cache_config.free_gpu_memory_fraction`. For bring-up on 8xB200, set `max_seq_len` explicitly
   instead of using the checkpoint's 1M-token context length.

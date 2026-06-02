@@ -680,7 +680,14 @@ class _KVCache:
         manager = self.manager
         # Scratch reuse: compute scratch ranges and slot delta
         enable_scratch = self.enable_swa_scratch_reuse
-        if enable_scratch and capacity != self._capacity:
+        # The rewind precondition below only constrains *growth* (reusing
+        # out-of-window stale blocks as scratch for newly added input blocks).
+        # A shrink (capacity < self._capacity) — e.g. revert_allocate_context/
+        # revert_allocate_generation undoing a deferred request's grow — never
+        # reuses scratch, so it must not be subject to this check. Guarding on
+        # `!= self._capacity` here wrongly fired the assert on shrink when
+        # max_rewind_len == 0 (its default), forcing history_length == capacity.
+        if enable_scratch and capacity > self._capacity:
             max_rewind_len = self._swa_scratch_max_rewind_len()
             min_history_length = max(0, self._capacity - max_rewind_len)
             assert min_history_length <= history_length <= self._capacity, (
@@ -704,7 +711,14 @@ class _KVCache:
         new_num_blocks = BlockOrdinal(div_up(capacity, tokens_per_block))
         num_life_cycles = manager._life_cycles.size
         if new_num_blocks < old_num_blocks:
-            assert not self.has_scratch_slots, "Cannot shrink while scratch slots exist"
+            # Scratch slots hold ephemeral data for an in-flight forward pass
+            # (suspend() frees them for exactly this reason). When shrinking, the
+            # request is abandoning that pass — e.g. revert_allocate_context/
+            # revert_allocate_generation undoing a grow whose forward pass was
+            # skipped by attention-DP delay batching. Free the scratch slots
+            # rather than asserting, otherwise the revert crashes the engine.
+            if self.has_scratch_slots:
+                self._free_scratch_slots()
             self._subtract_pending_allocation_range(new_num_blocks, old_num_blocks)
             with self._record_event():
                 del self._blocks[new_num_blocks:]
